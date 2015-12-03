@@ -3,7 +3,7 @@
 Plugin Name: wp-shortslug
 Plugin URI: https://github.com/petermolnar/wp-shortslug
 Description: reversible automatic short slug based on post pubdate epoch for WordPress
-Version: 0.1
+Version: 0.2
 Author: Peter Molnar <hello@petermolnar.eu>
 Author URI: http://petermolnar.eu/
 License: GPLv3
@@ -29,7 +29,7 @@ if (!class_exists('WP_SHORTSLUG')):
 
 class WP_SHORTSLUG {
 	const base = '0123456789abcdefghijklmnopqrstuvwxyz';
-	const b = 36;
+	const base_camel = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 	public function __construct () {
 		// init all the things!
@@ -38,10 +38,14 @@ class WP_SHORTSLUG {
 		// replace shortlink
 		add_action( 'wp_head', array(&$this, 'shortlink'));
 
+		// trigger fallback redirection by _wp_old_slug
+		add_action( 'wp_head', array(&$this, 'try_redirect'));
+
 		if (function_exists('is_admin') && is_admin() && !defined('DOING_AJAX')) {
 			$statuses = array ('new', 'draft', 'auto-draft', 'pending', 'private', 'future' );
 			foreach ($statuses as $status) {
-				add_action("{$status}_to_publish", array(&$this, "check_shorturl"));
+				add_action("{$status}_to_publish", array(&$this, "check_shorturl"), 2);
+				add_action("{$status}_to_publish", array(&$this, "maybe_generate_slug"), 1);
 			}
 		}
 
@@ -50,6 +54,17 @@ class WP_SHORTSLUG {
 	public function init() {
 		// shortlink replacement
 		add_filter( 'get_shortlink', array(&$this, 'shorturl'), 1, 4 );
+	}
+
+	/**
+	 * try to redirect by old slug in case the current result is 404
+	 *
+	 */
+	public static function try_redirect () {
+		global $wp_query;
+		if ($wp_query->is_404 == true) {
+			wp_old_slug_redirect();
+		}
 	}
 
 	/**
@@ -111,7 +126,7 @@ class WP_SHORTSLUG {
 	 * since WordPress has it's built-in rewrite engine, it's eaiser to use
 	 * that for adding the short urls
 	 */
-	public static function check_shorturl(&$post = null) {
+	public static function check_shorturl($post = null) {
 		$post = static::fix_post($post);
 
 		if ($post === false)
@@ -134,7 +149,7 @@ class WP_SHORTSLUG {
 		 * shouldn't really exist
 		 *
 		 */
-		if ( count($meta) > 3 ) {
+		if ( count($meta) > 6 ) {
 			foreach ($meta as $key => $slug ) {
 				// base36 matches
 				if (preg_match('/^[0-9a-z]{5,6}$/', $slug)) {
@@ -154,13 +169,60 @@ class WP_SHORTSLUG {
 	}
 
 	/**
+	 * since WordPress has it's built-in rewrite engine, it's eaiser to use
+	 * that for adding the short urls
+	 */
+	public static function maybe_generate_slug($post = null) {
+		$post = static::fix_post($post);
+
+		if ($post === false)
+			return false;
+
+		// auto-generated slug for empty title; this we should replace
+		$pattern = '/^' . $post->ID . '-[0-9]$/';
+
+		if ( !preg_match( $pattern, $post->post_name ) && !empty($post->post_title) ) {
+			static::debug( 'post '. $post->ID .' name is ' . $post->post_name . ' which does not match pattern ' . $pattern .' and the post_title is not empty, so not replacing slug with shortslug.' );
+			return false;
+		}
+
+		$url36 = static::shortslug($post);
+
+		static::debug( 'replacing slug of '. $post->ID .' with shortslug: ' . $url36 );
+
+		$_post = array(
+			'ID' => $post->ID,
+			'post_name' => $url36,
+		);
+
+		wp_update_post( $_post, $wp_error );
+
+		if (is_wp_error($wp_error)) {
+			$errors = json_encode($post_id->get_error_messages());
+			static::debug( $errors );
+		}
+
+
+		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
+		if (in_array($url36,$meta)) {
+			static::debug('removing slug ' . $url36 . ' from ' . $post->ID );
+			delete_post_meta($post->ID, '_wp_old_slug', $url36);
+		}
+
+		return true;
+	}
+
+
+	/**
 	 * decode short string and covert it back to UNIX EPOCH
 	 *
 	 */
-	public static function url2epoch( $str ) {
+	public static function url2epoch( $str, $b = 36 ) {
 
-		$b = static::b;
-		$base = static::base;
+		if ($b <= 36 )
+			$base = static::base;
+		else
+			$base = static::base_camel;
 
 		$limit = strlen($str);
 		$res=strpos($base,$str[0]);
@@ -176,10 +238,12 @@ class WP_SHORTSLUG {
 	 *
 	* thanks to https://stackoverflow.com/questions/4964197/converting-a-number-base-10-to-base-62-a-za-z0-9
 	*/
-	public static function epoch2url($num) {
+	public static function epoch2url($num, $b = 36 ) {
 
-		$b = static::b;
-		$base = static::base;
+		if ($b <= 36 )
+			$base = static::base;
+		else
+			$base = static::base_camel;
 
 		$r = $num  % $b ;
 		$res = $base[$r];
