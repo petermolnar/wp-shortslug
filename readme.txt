@@ -7,6 +7,7 @@ Tested up to: 4.4
 Stable tag: 0.2
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
+Required minimum PHP version: 5.3
 
 Automatic, decodable short slugs for a post to replace shorturl
 

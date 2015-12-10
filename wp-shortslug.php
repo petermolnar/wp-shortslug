@@ -7,6 +7,7 @@ Version: 0.2
 Author: Peter Molnar <hello@petermolnar.eu>
 Author URI: http://petermolnar.eu/
 License: GPLv3
+Required minimum PHP version: 5.3
 */
 
 /*  Copyright 2015 Peter Molnar ( hello@petermolnar.eu )
