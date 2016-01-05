@@ -2,14 +2,14 @@
     "name": "petermolnar/wp-shortslug",
     "description": "WordPress plugin to auto-generate base36 short slugs for each post",
     "require": {
-		"php": ">=5.3.0"
+        "php": ">=5.3.0"
     },
     "license": "GPLv3",
     "authors": [
         {
             "name": "Peter Molnar",
             "email": "hello@petermolnar.eu",
-			"homepage": "https://petermolnar.eu"
+            "homepage": "https://petermolnar.eu"
         }
     ]
 }

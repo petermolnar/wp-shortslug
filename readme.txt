@@ -1,6 +1,6 @@
 === wp-shortslug ===
 Contributors: cadeyrn
-Donate link: https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=AS8Y2GSMDTJZC
+Donate link: https://paypal.me/petermolnar/3
 Tags: shortlink, shorturl, slug
 Requires at least: 3.0
 Tested up to: 4.4

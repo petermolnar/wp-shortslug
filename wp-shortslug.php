@@ -33,6 +33,8 @@ class WP_SHORTSLUG {
 	const base_camel = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 	public function __construct () {
+		register_activation_hook( __FILE__ , array( &$this, 'plugin_activate' ) );
+
 		// init all the things!
 		add_action( 'init', array( &$this, 'init'));
 
@@ -55,6 +57,15 @@ class WP_SHORTSLUG {
 	public function init() {
 		// shortlink replacement
 		add_filter( 'get_shortlink', array(&$this, 'shorturl'), 1, 4 );
+	}
+
+	/**
+	 * activate hook
+	 */
+	public static function plugin_activate() {
+		if ( version_compare( phpversion(), 5.3, '<' ) ) {
+			die( 'The minimum PHP version required for this plugin is 5.3' );
+		}
 	}
 
 	/**
@@ -196,13 +207,13 @@ class WP_SHORTSLUG {
 			'post_name' => $url36,
 		);
 
+		$wp_error = false;
 		wp_update_post( $_post, $wp_error );
 
 		if (is_wp_error($wp_error)) {
 			$errors = json_encode($post_id->get_error_messages());
 			static::debug( $errors );
 		}
-
 
 		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 		if (in_array($url36,$meta)) {
@@ -282,14 +293,29 @@ class WP_SHORTSLUG {
 	}
 
 	/**
-	 * debug log messages, if needed
+	 *
+	 * debug messages; will only work if WP_DEBUG is on
+	 * or if the level is LOG_ERR, but that will kill the process
+	 *
+	 * @param string $message
+	 * @param int $level
 	 */
-	public static function debug( $message) {
-		if (is_object($message) || is_array($message))
+	public static function debug( $message, $level = LOG_NOTICE ) {
+		if ( @is_array( $message ) || @is_object ( $message ) )
 			$message = json_encode($message);
 
-		if ( defined('WP_DEBUG') && WP_DEBUG == true )
-			error_log ( __CLASS__ . ' => ' . $message);
+
+		switch ( $level ) {
+			case LOG_ERR :
+				wp_die( '<h1>Error:</h1>' . '<p>' . $message . '</p>' );
+				exit;
+			default:
+				if ( !defined( 'WP_DEBUG' ) || WP_DEBUG != true )
+					return;
+				break;
+		}
+
+		error_log(  __CLASS__ . ": " . $message );
 	}
 
 }
