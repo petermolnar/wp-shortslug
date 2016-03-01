@@ -3,7 +3,7 @@
 Plugin Name: wp-shortslug
 Plugin URI: https://github.com/petermolnar/wp-shortslug
 Description: reversible automatic short slug based on post pubdate epoch for WordPress
-Version: 0.2
+Version: 0.3
 Author: Peter Molnar <hello@petermolnar.eu>
 Author URI: http://petermolnar.eu/
 License: GPLv3
@@ -44,6 +44,11 @@ class WP_SHORTSLUG {
 		// trigger fallback redirection by _wp_old_slug
 		add_action( 'wp_head', array(&$this, 'try_redirect'));
 
+		// register new posts
+		add_action( "transition_post_status", array(&$this, "maybe_generate_slug"), 1, 3 );
+		add_action( "transition_post_status", array( &$this, 'check_shorturl' ), 2, 3 );
+
+		/*
 		if (function_exists('is_admin') && is_admin() && !defined('DOING_AJAX')) {
 			$statuses = array ('new', 'draft', 'auto-draft', 'pending', 'private', 'future' );
 			foreach ($statuses as $status) {
@@ -51,6 +56,7 @@ class WP_SHORTSLUG {
 				add_action("{$status}_to_publish", array(&$this, "maybe_generate_slug"), 1);
 			}
 		}
+		*/
 
 	}
 
@@ -92,7 +98,11 @@ class WP_SHORTSLUG {
 
 		$url = static::shortslug($post);
 
-		$base = rtrim( get_bloginfo('url'), '/' ) . '/';
+		if ( defined ('SHORTSLUG_BASE') )
+			$base = SHORTSLUG_BASE . '/';
+		else
+			$base = rtrim( get_bloginfo('url'), '/' ) . '/';
+
 		return $base.$url;
 	}
 
@@ -138,19 +148,35 @@ class WP_SHORTSLUG {
 	 * since WordPress has it's built-in rewrite engine, it's eaiser to use
 	 * that for adding the short urls
 	 */
-	public static function check_shorturl($post = null) {
+	public static function check_shorturl( $new_status = false, $old_status = false, $post = null ) {
 		$post = static::fix_post($post);
 
 		if ($post === false)
 			return false;
 
+		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 		$url36 = static::shortslug($post);
+		static::debug("current slug for #{$post->ID}: '{$url36}'" );
+		$epoch = get_the_time('U', $post->ID);
+
+		foreach ($meta as $key => $slug ) {
+			$decoded = static::url2epoch ( $slug );
+
+			// base36 matches which are older than the publish date should be deleted
+			if (preg_match('/^[0-9a-z]{5,6}$/', $slug) && $decoded < $epoch && $slug != $url36 ) {
+				static::debug( "deleting slug '{$slug}' from #{$post->ID} - it's older than publish date so it can't be in use" );
+				delete_post_meta($post->ID, '_wp_old_slug', $slug);
+				unset($meta[$key]);
+			}
+		}
+
+		// back away at this point if this post is not yet published
+		if ( 'publish' != $new_status )
+			return false;
 
 		// if the generated url is the same as the current slug, walk away
 		if ( $url36 == $post->post_name )
 			return true;
-
-		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 
 		/*
 		 * there should be only our shorturl living here, so in case
@@ -160,8 +186,10 @@ class WP_SHORTSLUG {
 		 * matching the criteria of lowecase-with-nums, 5 at max 6 char length
 		 * shouldn't really exist
 		 *
-		 */
-		if ( count($meta) > 6 ) {
+		 * also do this if this is a fresh post publish to clean up leftovers
+		 *
+		 *
+		if ( count($meta) > 3 ) ) {
 			foreach ($meta as $key => $slug ) {
 				// base36 matches
 				if (preg_match('/^[0-9a-z]{5,6}$/', $slug)) {
@@ -171,7 +199,9 @@ class WP_SHORTSLUG {
 				}
 			}
 		}
+		*/
 
+		// if we somehow deleted the actual slug, fix it
 		if ( !in_array($url36,$meta)) {
 			static::debug('adding slug ' . $url36 . ' to ' . $post->ID );
 			add_post_meta($post->ID, '_wp_old_slug', $url36);
@@ -184,7 +214,7 @@ class WP_SHORTSLUG {
 	 * since WordPress has it's built-in rewrite engine, it's eaiser to use
 	 * that for adding the short urls
 	 */
-	public static function maybe_generate_slug($post = null) {
+	public static function maybe_generate_slug( $new_status, $old_status, $post ) {
 		$post = static::fix_post($post);
 
 		if ($post === false)
@@ -198,9 +228,20 @@ class WP_SHORTSLUG {
 			return false;
 		}
 
-		$url36 = static::shortslug($post);
-
 		static::debug( 'replacing slug of '. $post->ID .' with shortslug: ' . $url36 );
+
+		// generate new
+		$url36 = static::shortslug($post);
+		// save old, just in case
+		add_post_meta( $post->ID, '_wp_old_slug', $post->post_name );
+
+		/*
+		 * this is depricated, but I'll leave it in the code for the future me:
+		 * in case you use wp_update_post, it will trigger a post transition, so
+		 * that will trigger _everything_ that hooks to that, which is not what we
+		 * want. In that case we'll end up with a duplicate event, for both the old
+		 * and the new slug and, for example, in a webmention hook's case that is
+		 * far from ideal.
 
 		$_post = array(
 			'ID' => $post->ID,
@@ -214,6 +255,23 @@ class WP_SHORTSLUG {
 			$errors = json_encode($post_id->get_error_messages());
 			static::debug( $errors );
 		}
+		*/
+
+		global $wpdb;
+		$dbname = "{$wpdb->prefix}posts";
+		$req = false;
+
+		static::debug("Updating post slug for #{$post->ID}");
+
+		$q = $wpdb->prepare( "UPDATE `{$dbname}` SET `post_name`='%s' WHERE `ID`='{$post->ID}' LIMIT 1", $url36 );
+
+		try {
+			$req = $wpdb->query( $q );
+		}
+		catch (Exception $e) {
+			static::debug('Something went wrong: ' . $e->getMessage());
+		}
+
 
 		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 		if (in_array($url36,$meta)) {
@@ -299,23 +357,54 @@ class WP_SHORTSLUG {
 	 *
 	 * @param string $message
 	 * @param int $level
+	 *
+	 * @output log to syslog | wp_die on high level
+	 * @return false on not taking action, true on log sent
 	 */
 	public static function debug( $message, $level = LOG_NOTICE ) {
+		if ( empty( $message ) )
+			return false;
+
 		if ( @is_array( $message ) || @is_object ( $message ) )
 			$message = json_encode($message);
 
+		$levels = array (
+			LOG_EMERG => 0, // system is unusable
+			LOG_ALERT => 1, // Alert 	action must be taken immediately
+			LOG_CRIT => 2, // Critical 	critical conditions
+			LOG_ERR => 3, // Error 	error conditions
+			LOG_WARNING => 4, // Warning 	warning conditions
+			LOG_NOTICE => 5, // Notice 	normal but significant condition
+			LOG_INFO => 6, // Informational 	informational messages
+			LOG_DEBUG => 7, // Debug 	debug-level messages
+		);
 
-		switch ( $level ) {
-			case LOG_ERR :
-				wp_die( '<h1>Error:</h1>' . '<p>' . $message . '</p>' );
-				exit;
-			default:
-				if ( !defined( 'WP_DEBUG' ) || WP_DEBUG != true )
-					return;
-				break;
+		// number for number based comparison
+		// should work with the defines only, this is just a make-it-sure step
+		$level_ = $levels [ $level ];
+
+		// in case WordPress debug log has a minimum level
+		if ( defined ( 'WP_DEBUG_LEVEL' ) ) {
+			$wp_level = $levels [ WP_DEBUG_LEVEL ];
+			if ( $level_ < $wp_level ) {
+				return false;
+			}
 		}
 
-		error_log(  __CLASS__ . ": " . $message );
+		// ERR, CRIT, ALERT and EMERG
+		if ( 3 >= $level_ ) {
+			wp_die( '<h1>Error:</h1>' . '<p>' . $message . '</p>' );
+			exit;
+		}
+
+		$trace = debug_backtrace();
+		$caller = $trace[1];
+		$parent = $caller['function'];
+
+		if (isset($caller['class']))
+			$parent = $caller['class'] . '::' . $parent;
+
+		return error_log( "{$parent}: {$message}" );
 	}
 
 }

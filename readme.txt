@@ -4,7 +4,7 @@ Donate link: https://paypal.me/petermolnar/3
 Tags: shortlink, shorturl, slug
 Requires at least: 3.0
 Tested up to: 4.4
-Stable tag: 0.2
+Stable tag: 0.3
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Required minimum PHP version: 5.3
@@ -31,6 +31,13 @@ Version numbering logic:
 * every A. indicates BIG changes.
 * every .B version indicates new features.
 * every ..C indicates bugfixes for A.B version.
+
+= 0.3 =
+*2016-03-01*
+
+* added auto-cleanup on publish
+* added auto-cleanup for impossible shortslugs
+* added better logging
 
 = 0.2 =
 *2015-12-03*
