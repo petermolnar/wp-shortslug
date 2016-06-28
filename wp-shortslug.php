@@ -114,16 +114,6 @@ class WP_SHORTSLUG {
 		if (function_exists('is_singular') && is_singular()) {
 			$url = static::shorturl();
 			if ( !empty($url) ) {
-				/* this is a good hook location to also check for the existence of
-				 * the _wp_old_slug entry: before printing a non-existent url, make
-				 * sure it exists in the DB
-				 *
-				 * this is mostly for retro-fitting non-existant entries for posts
-				 * that were published earlier than the plugin was intalled/activated
-				 *
-				 */
-				static::check_shorturl();
-
 				printf ('<link rel="shortlink" href="%s" />%s', static::shorturl() , "\n");
 			}
 		}
@@ -156,15 +146,33 @@ class WP_SHORTSLUG {
 
 		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 		$url36 = static::shortslug($post);
-		static::debug("current slug for #{$post->ID}: '{$url36}'" );
 		$epoch = get_the_time('U', $post->ID);
+		$checked = array();
 
 		foreach ($meta as $key => $slug ) {
-			$decoded = static::url2epoch ( $slug );
+			if ( empty ($slug) ) {
+				static::debug( "there was an empty slug for '{$key}', deleting it early", 4 );
+				delete_post_meta($post->ID, '_wp_old_slug', $slug);
+				continue;
+			}
+
+			if ( ! in_array( $slug, $checked ) ) {
+				array_push ( $checked, $slug );
+			}
+			else {
+				static::debug( "deleting slug '{$slug}' from #{$post->ID} - duplicate", 4 );
+				delete_post_meta($post->ID, '_wp_old_slug', $slug);
+				unset($meta[$key]);
+			}
+
+			$decoded = static::url2epoch( $slug );
+			if ( ! is_numeric($decoded) || empty($decoded) || $decoded > time() ) {
+				continue;
+			}
 
 			// base36 matches which are older than the publish date should be deleted
 			if (preg_match('/^[0-9a-z]{5,6}$/', $slug) && $decoded < $epoch && $slug != $url36 ) {
-				static::debug( "deleting slug '{$slug}' from #{$post->ID} - it's older than publish date so it can't be in use" );
+				static::debug( "deleting slug '{$slug}' from #{$post->ID} - it's older than publish date so it can't be in use", 4 );
 				delete_post_meta($post->ID, '_wp_old_slug', $slug);
 				unset($meta[$key]);
 			}
@@ -200,10 +208,10 @@ class WP_SHORTSLUG {
 			}
 		}
 		*/
-
+		static::debug("generated slug for #{$post->ID}: '{$url36}'", 6 );
 		// if we somehow deleted the actual slug, fix it
 		if ( !in_array($url36,$meta)) {
-			static::debug('adding slug ' . $url36 . ' to ' . $post->ID );
+			static::debug('adding slug ' . $url36 . ' to ' . $post->ID, 6 );
 			add_post_meta($post->ID, '_wp_old_slug', $url36);
 		}
 
@@ -224,14 +232,16 @@ class WP_SHORTSLUG {
 		$pattern = '/^' . $post->ID . '-[0-9]$/';
 
 		if ( !preg_match( $pattern, $post->post_name ) && !empty($post->post_title) ) {
-			static::debug( 'post '. $post->ID .' name is ' . $post->post_name . ' which does not match pattern ' . $pattern .' and the post_title is not empty, so not replacing slug with shortslug.' );
 			return false;
 		}
-
-		static::debug( 'replacing slug of '. $post->ID .' with shortslug: ' . $url36 );
+		else {
+			static::debug( 'post '. $post->ID .' name is ' . $post->post_name . ' which matches pattern ' . $pattern .' or the post_title is empty, so shortslug is required.', 6 );
+		}
 
 		// generate new
 		$url36 = static::shortslug($post);
+		static::debug( 'replacing slug of '. $post->ID .' with shortslug: ' . $url36, 5 );
+
 		// save old, just in case
 		add_post_meta( $post->ID, '_wp_old_slug', $post->post_name );
 
@@ -261,7 +271,7 @@ class WP_SHORTSLUG {
 		$dbname = "{$wpdb->prefix}posts";
 		$req = false;
 
-		static::debug("Updating post slug for #{$post->ID}");
+		static::debug("Updating post slug for #{$post->ID}", 5);
 
 		$q = $wpdb->prepare( "UPDATE `{$dbname}` SET `post_name`='%s' WHERE `ID`='{$post->ID}' LIMIT 1", $url36 );
 
@@ -269,13 +279,13 @@ class WP_SHORTSLUG {
 			$req = $wpdb->query( $q );
 		}
 		catch (Exception $e) {
-			static::debug('Something went wrong: ' . $e->getMessage());
+			static::debug('Something went wrong: ' . $e->getMessage(), 4);
 		}
 
 
 		$meta = get_post_meta( $post->ID, '_wp_old_slug', false);
 		if (in_array($url36,$meta)) {
-			static::debug('removing slug ' . $url36 . ' from ' . $post->ID );
+			static::debug('removing slug ' . $url36 . ' from ' . $post->ID, 5 );
 			delete_post_meta($post->ID, '_wp_old_slug', $url36);
 		}
 
@@ -288,6 +298,11 @@ class WP_SHORTSLUG {
 	 *
 	 */
 	public static function url2epoch( $str, $b = 36 ) {
+
+		if ( empty ( $str ) ) {
+			static::debug( 'url2epoch to empty string to match; trace: ' . json_encode( debug_backtrace() ) );
+			return false;
+		}
 
 		if ($b <= 36 )
 			$base = static::base;
@@ -386,7 +401,7 @@ class WP_SHORTSLUG {
 		// in case WordPress debug log has a minimum level
 		if ( defined ( 'WP_DEBUG_LEVEL' ) ) {
 			$wp_level = $levels [ WP_DEBUG_LEVEL ];
-			if ( $level_ < $wp_level ) {
+			if ( $level_ > $wp_level ) {
 				return false;
 			}
 		}
