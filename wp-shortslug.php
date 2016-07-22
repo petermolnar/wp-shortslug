@@ -29,11 +29,11 @@ Required minimum PHP version: 5.3
 namespace WP_SHORTSLUG;
 
 define (
-	'base',
+	'WP_SHORTSLUG\base',
 	'0123456789abcdefghijklmnopqrstuvwxyz'
 );
 define (
-	'base_camel',
+	'WP_SHORTSLUG\base_camel',
 	'0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 );
 
