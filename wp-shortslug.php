@@ -2,8 +2,8 @@
 /*
 Plugin Name: wp-shortslug
 Plugin URI: https://github.com/petermolnar/wp-shortslug
-Description: reversible automatic short slug based on post pubdate epoch for WordPress
-Version: 0.4
+Description: reversible automatic short slug based on post pubdate epoch
+Version: 0.4.1
 Author: Peter Molnar <hello@petermolnar.eu>
 Author URI: http://petermolnar.eu/
 License: GPLv3
@@ -28,8 +28,14 @@ Required minimum PHP version: 5.3
 
 namespace WP_SHORTSLUG;
 
-define ( 'base', '0123456789abcdefghijklmnopqrstuvwxyz' );
-define ( 'base_camel', '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' );
+define (
+	'base',
+	'0123456789abcdefghijklmnopqrstuvwxyz'
+);
+define (
+	'base_camel',
+	'0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+);
 
 
 \register_activation_hook( __FILE__ , 'WP_SHORTSLUG\plugin_activate' );
@@ -44,12 +50,25 @@ define ( 'base_camel', '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST
 \add_action( 'wp_head', 'WP_SHORTSLUG\try_redirect' );
 
 // register new posts
-\add_action( "transition_post_status", 'WP_SHORTSLUG\maybe_generate_slug', 1, 3 );
-\add_action( "transition_post_status", 'WP_SHORTSLUG\check_shorturl', 2, 3 );
+\add_action(
+	"transition_post_status",
+	'WP_SHORTSLUG\maybe_generate_slug',
+	1,
+	3
+);
+\add_action(
+	"transition_post_status",
+	'WP_SHORTSLUG\check_shorturl',
+	2,
+	3
+);
 
+/**
+ *
+ */
 function init() {
 	// shortlink replacement
-	\add_filter( 'get_shortlink', 'WP_SHORTSLUG\shorturl', 1, 4 );
+	\add_filter( 'get_shortlink', 'WP_SHORTSLUG\shorturl', 1, 1 );
 }
 
 /**
@@ -76,7 +95,7 @@ function try_redirect () {
  * absolute short url
  *
  */
-function shorturl ( $shortlink = '', $id = '', $context = '', $allow_slugs = '' ) {
+function shorturl ( $shortlink = '' ) {
 	global $post;
 	$post = fix_post($post);
 
@@ -125,7 +144,7 @@ function shortslug ( &$post ) {
  * since WordPress has it's built-in rewrite engine, it's eaiser to use
  * that for adding the short urls
  */
-function check_shorturl( $new_status = false, $old_status = false, $post = null ) {
+function check_shorturl( $new_status, $old_status, $post ) {
 	$post = fix_post($post);
 
 	if ($post === false)
@@ -158,8 +177,12 @@ function check_shorturl( $new_status = false, $old_status = false, $post = null 
 		}
 
 		// base36 matches which are older than the publish date should be deleted
-		if (preg_match('/^[0-9a-z]{5,6}$/', $slug) && $decoded < $epoch && $slug != $url36 ) {
-			debug( "deleting slug '{$slug}' from #{$post->ID} - it's older than publish date so it can't be in use", 4 );
+		if ( preg_match('/^[0-9a-z]{5,6}$/', $slug) &&
+				 $decoded < $epoch &&
+				 $slug != $url36
+			) {
+			debug( "deleting slug '{$slug}' from #{$post->ID} "
+				. "- it's older than publish date so it can't be in use", 4 );
 			\delete_post_meta( $post->ID, '_wp_old_slug', $slug );
 			unset($meta[$key]);
 		}
@@ -222,7 +245,9 @@ function maybe_generate_slug( $new_status, $old_status, $post ) {
 		return false;
 	}
 	else {
-		debug( "post {$post->ID} name is {$post->post_name} which matches pattern {$pattern} or the post_title is empty, so shortslug is required.", 6 );
+		debug( "post {$post->ID} name is {$post->post_name} which matches"
+			." pattern {$pattern} or the post_title is empty,"
+			." so shortslug is required.", 6 );
 	}
 
 	// generate new
@@ -260,7 +285,8 @@ function maybe_generate_slug( $new_status, $old_status, $post ) {
 
 	debug( "Updating post slug for #{$post->ID}", 5);
 
-	$q = $wpdb->prepare( "UPDATE `{$dbname}` SET `post_name`='%s' WHERE `ID`='{$post->ID}' LIMIT 1", $url36 );
+	$q = $wpdb->prepare( "UPDATE `{$dbname}` SET `post_name`='%s' WHERE ".
+		"`ID`='{$post->ID}' LIMIT 1", $url36 );
 
 	try {
 		$req = $wpdb->query( $q );
@@ -287,7 +313,9 @@ function maybe_generate_slug( $new_status, $old_status, $post ) {
 function url2epoch( $str, $b = 36 ) {
 
 	if ( empty ( $str ) ) {
-		debug( 'url2epoch to empty string to match; trace: ' . json_encode( debug_backtrace() ) );
+		debug( 'url2epoch to empty string to match; trace: '
+		 . json_encode( debug_backtrace() )
+		);
 		return false;
 	}
 
@@ -308,8 +336,9 @@ function url2epoch( $str, $b = 36 ) {
 /**
  * convert UNIX EPOCH to short string
  *
-* thanks to https://stackoverflow.com/questions/4964197/converting-a-number-base-10-to-base-62-a-za-z0-9
-*/
+ * thanks to https://stackoverflow.com/questions/4964197/
+ *
+ */
 function epoch2url($num, $b = 36 ) {
 
 	if ($b <= 36 )
@@ -346,7 +375,10 @@ function fix_post ( &$post = null ) {
  * test if an object is actually a post
  */
 function is_post ( &$post ) {
-	if ( !empty($post) && is_object($post) && isset($post->ID) && !empty($post->ID) )
+	if ( ! empty( $post ) &&
+			 is_object( $post ) &&
+			 isset( $post->ID ) &&
+			 ! empty( $post->ID ) )
 		return true;
 
 	return false;
