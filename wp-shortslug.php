@@ -3,11 +3,10 @@
 Plugin Name: wp-shortslug
 Plugin URI: https://github.com/petermolnar/wp-shortslug
 Description: reversible automatic short slug based on post pubdate epoch
-Version: 0.4.1
+Version: 0.5
 Author: Peter Molnar <hello@petermolnar.eu>
 Author URI: http://petermolnar.eu/
 License: GPLv3
-Required minimum PHP version: 5.3
 */
 
 /*  Copyright 2015 Peter Molnar ( hello@petermolnar.eu )
@@ -62,6 +61,59 @@ define (
 	2,
 	3
 );
+
+\add_action(
+	"transition_post_status",
+	'WP_SHORTSLUG\generate_redirects',
+	99,
+	3
+);
+
+function generate_redirects( $new_status = null, $old_status = null,
+	$post = null ) {
+	$posts = get_posts( array (
+		'posts_per_page'   => -1,
+		'orderby'          => 'date',
+		'order'            => 'DESC',
+		'post_type'        => 'post',
+		'post_status'      => 'publish',
+	));
+
+	$f = array();
+	foreach ( $posts as $p ) {
+		$old_slugs = get_post_meta( $p->ID, '_wp_old_slug', false );
+		array_push( $old_slugs, shortslug( $p ) );
+		$old_slugs = array_unique ( $old_slugs );
+		sort( $old_slugs );
+		foreach ( $old_slugs as $from ) {
+			// ????
+			if ( empty( $from ) )
+				continue;
+
+			if ( $from == $p->post_name )
+				continue;
+
+			if ( stristr( $from, 'autosave') || stristr( $from, 'revision') )
+				continue;
+
+			if ( preg_match( '/^[0-9A-Za-z]{5}$/', $from ) )
+				continue;
+
+			if ( preg_match( '/^[0-9]+-[0-9]$/', $from ) )
+				continue;
+
+			$r[ $from ] = site_url ( $p->post_name );
+		}
+	}
+
+	$out = '';
+	foreach ( $r as $from => $target ) {
+		$out .= "location /{$from} {  return 301 {$target}; }\n";
+	}
+
+	file_put_contents( __DIR__ . DIRECTORY_SEPARATOR . 'nginx_redirects.conf',
+		$out );
+}
 
 /**
  *
@@ -144,7 +196,11 @@ function shortslug ( &$post ) {
  * since WordPress has it's built-in rewrite engine, it's eaiser to use
  * that for adding the short urls
  */
-function check_shorturl( $new_status, $old_status, $post ) {
+function check_shorturl( $new_status = null, $old_status = null,
+	$post = null ) {
+	if (  $new_status == null || $old_status == null || $post == null )
+		return false;
+
 	$post = fix_post($post);
 
 	if ($post === false)
